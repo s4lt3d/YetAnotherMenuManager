@@ -1,4 +1,4 @@
-# This .gitignore file should be placed at the root of your Unity project directory
+go # This .gitignore file should be placed at the root of your Unity project directory
 #
 # Get latest from https://github.com/github/gitignore/blob/main/Unity.gitignore
 #
@@ -97,3 +97,10 @@ InitTestScene*.unity*
 
 # Auto-generated scenes by play mode tests
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
+.DS_Store
+.idea
+.DS_Store
+
+# Ignore CI/CD scripts
+Deploy/*.sh
+

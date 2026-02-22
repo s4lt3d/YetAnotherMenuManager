@@ -1,12 +1,23 @@
+using System;
 using Core.Interfaces;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.InputSystem.Utilities;
 
 namespace Managers
 {
     public class GameInputManager : MonoBehaviour, IService
     {
+        private const string GeneratedActionsTypeName = "InputSystem_Actions";
+        private const string PlayerMoveActionPath = "Player/Move";
+        private const string PlayerLookActionPath = "Player/Look";
+        private const string PlayerJumpActionPath = "Player/Jump";
+        private const string PlayerSprintActionPath = "Player/Sprint";
+        private const string PlayerPreviousActionPath = "Player/Previous";
+        private const string UiCancelActionPath = "UI/Cancel";
+        private const string UiPauseActionPath = "UI/Pause";
+
         [SerializeField]
         private int maxPlayers = 2;
 
@@ -27,7 +38,43 @@ namespace Managers
         [SerializeField] [Range(0f, 1f)]
         private float controllerLookActivationThreshold = 0.01f;
 
-        private InputSystem_Actions[] playerActions;
+        private PlayerInputCollection[] playerActions;
+        private static Type _generatedActionsType;
+        private static bool _loggedMissingGeneratedActionsType;
+
+        private sealed class PlayerInputCollection
+        {
+            public IInputActionCollection2 Collection;
+            public IDisposable Disposable;
+            public InputAction Move;
+            public InputAction Look;
+            public InputAction Jump;
+            public InputAction Sprint;
+            public InputAction Previous;
+            public InputAction Cancel;
+            public InputAction Pause;
+
+            public ReadOnlyArray<InputDevice>? Devices
+            {
+                get => Collection.devices;
+                set => Collection.devices = value;
+            }
+
+            public void Enable()
+            {
+                Collection.Enable();
+            }
+
+            public void Disable()
+            {
+                Collection.Disable();
+            }
+
+            public void Dispose()
+            {
+                Disposable?.Dispose();
+            }
+        }
 
         public void InitializeService()
         {
@@ -55,7 +102,7 @@ namespace Managers
             if (!TryGetPlayerActions(player, out var actions))
                 return Vector2.zero;
 
-            return actions.Player.Move.ReadValue<Vector2>();
+            return actions.Move != null ? actions.Move.ReadValue<Vector2>() : Vector2.zero;
         }
 
         public Vector2 GetLook(int player)
@@ -70,11 +117,11 @@ namespace Managers
                 var threshold = Mathf.Clamp01(controllerLookActivationThreshold);
                 rawLook = stick.sqrMagnitude >= threshold * threshold
                     ? ScaleControllerLook(stick)
-                    : actions.Player.Look.ReadValue<Vector2>();
+                    : actions.Look != null ? actions.Look.ReadValue<Vector2>() : Vector2.zero;
             }
             else
             {
-                rawLook = actions.Player.Look.ReadValue<Vector2>();
+                rawLook = actions.Look != null ? actions.Look.ReadValue<Vector2>() : Vector2.zero;
             }
 
             return new Vector2(-rawLook.y, rawLook.x);
@@ -85,7 +132,7 @@ namespace Managers
             if (!TryGetPlayerActions(player, out var actions))
                 return false;
 
-            return actions.Player.Jump.WasPressedThisFrame();
+            return actions.Jump != null && actions.Jump.WasPressedThisFrame();
         }
 
         public bool GetSprinting(int player)
@@ -93,7 +140,7 @@ namespace Managers
             if (!TryGetPlayerActions(player, out var actions))
                 return false;
 
-            return actions.Player.Sprint.IsPressed();
+            return actions.Sprint != null && actions.Sprint.IsPressed();
         }
 
         public bool GetDashing(int player)
@@ -107,11 +154,11 @@ namespace Managers
                 return false;
 
             // Primary UI back/cancel action (ESC / gamepad B / platform cancel).
-            if (actions.UI.Cancel.WasPressedThisFrame())
+            if (actions.Cancel != null && actions.Cancel.WasPressedThisFrame())
                 return true;
 
             // Fallback for projects that route back through Player map bindings.
-            return actions.Player.Previous.WasPressedThisFrame();
+            return actions.Previous != null && actions.Previous.WasPressedThisFrame();
         }
 
         public bool GetMenuPausePressed(int player = 0)
@@ -119,7 +166,7 @@ namespace Managers
             if (!TryGetPlayerActions(player, out var actions))
                 return false;
 
-            return actions.UI.Pause.WasPressedThisFrame();
+            return actions.Pause != null && actions.Pause.WasPressedThisFrame();
         }
 
         public void SwitchToUIMode()
@@ -135,9 +182,14 @@ namespace Managers
         private void SetupPlayers()
         {
             var playerCount = Mathf.Max(1, maxPlayers);
-            playerActions = new InputSystem_Actions[playerCount];
+            playerActions = new PlayerInputCollection[playerCount];
             for (var i = 0; i < playerActions.Length; i++)
-                playerActions[i] = new InputSystem_Actions();
+                if (!TryCreatePlayerActions(out playerActions[i]))
+                {
+                    playerActions[i] = null;
+                    Debug.LogError(
+                        $"[GameInputManager] Failed to create input action collection for player {i}. Check InputSystem_Actions generation.");
+                }
 
             ApplyDevices();
         }
@@ -149,8 +201,11 @@ namespace Managers
 
             for (var i = 0; i < playerActions.Length; i++)
             {
-                playerActions[i].Player.Disable();
-                playerActions[i].UI.Disable();
+                var actions = playerActions[i];
+                if (actions == null)
+                    continue;
+
+                actions.Disable();
             }
         }
 
@@ -171,6 +226,10 @@ namespace Managers
 
             for (var i = 0; i < playerActions.Length; i++)
             {
+                var actions = playerActions[i];
+                if (actions == null)
+                    continue;
+
                 var devices = new List<InputDevice>(2);
                 var gamepad = i < Gamepad.all.Count ? Gamepad.all[i] : null;
                 if (gamepad != null)
@@ -186,20 +245,18 @@ namespace Managers
 
                 if (devices.Count > 0)
                 {
-                    playerActions[i].devices = devices.ToArray();
-                    playerActions[i].Player.Enable();
-                    playerActions[i].UI.Enable();
+                    actions.Devices = devices.ToArray();
+                    actions.Enable();
                 }
                 else
                 {
-                    playerActions[i].devices = null;
-                    playerActions[i].Player.Disable();
-                    playerActions[i].UI.Disable();
+                    actions.Devices = null;
+                    actions.Disable();
                 }
             }
         }
 
-        private bool TryGetPlayerActions(int player, out InputSystem_Actions actions)
+        private bool TryGetPlayerActions(int player, out PlayerInputCollection actions)
         {
             actions = null;
             if (playerActions == null)
@@ -230,7 +287,7 @@ namespace Managers
             if (!TryGetPlayerActions(player, out var actions))
                 return false;
 
-            var maybeDevices = actions.devices;
+            var maybeDevices = actions.Devices;
             if (!maybeDevices.HasValue)
                 return false;
 
@@ -241,6 +298,93 @@ namespace Managers
                     gamepad = assignedGamepad;
                     return true;
                 }
+
+            return false;
+        }
+
+        private static bool TryCreatePlayerActions(out PlayerInputCollection playerInputCollection)
+        {
+            playerInputCollection = null;
+
+            if (!TryResolveGeneratedActionsType(out var generatedActionsType))
+                return false;
+
+            object instance;
+            try
+            {
+                instance = Activator.CreateInstance(generatedActionsType);
+            }
+            catch (Exception ex)
+            {
+                Debug.LogError($"[GameInputManager] Failed to instantiate {generatedActionsType.FullName}: {ex}");
+                return false;
+            }
+
+            if (instance is not IInputActionCollection2 collection)
+            {
+                Debug.LogError(
+                    $"[GameInputManager] Generated action wrapper {generatedActionsType.FullName} does not implement IInputActionCollection2.");
+                (instance as IDisposable)?.Dispose();
+                return false;
+            }
+
+            var move = collection.FindAction(PlayerMoveActionPath, false);
+            var look = collection.FindAction(PlayerLookActionPath, false);
+            var jump = collection.FindAction(PlayerJumpActionPath, false);
+            var sprint = collection.FindAction(PlayerSprintActionPath, false);
+            var previous = collection.FindAction(PlayerPreviousActionPath, false);
+            var cancel = collection.FindAction(UiCancelActionPath, false);
+            var pause = collection.FindAction(UiPauseActionPath, false);
+
+            if (move == null || look == null || jump == null || sprint == null || previous == null || cancel == null || pause == null)
+            {
+                Debug.LogError(
+                    "[GameInputManager] Input action asset is missing one or more required actions (Player/Move, Player/Look, Player/Jump, Player/Sprint, Player/Previous, UI/Cancel, UI/Pause).");
+                (instance as IDisposable)?.Dispose();
+                return false;
+            }
+
+            playerInputCollection = new PlayerInputCollection
+            {
+                Collection = collection,
+                Disposable = instance as IDisposable,
+                Move = move,
+                Look = look,
+                Jump = jump,
+                Sprint = sprint,
+                Previous = previous,
+                Cancel = cancel,
+                Pause = pause
+            };
+
+            return true;
+        }
+
+        private static bool TryResolveGeneratedActionsType(out Type generatedActionsType)
+        {
+            generatedActionsType = _generatedActionsType;
+            if (generatedActionsType != null)
+                return true;
+
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            for (var i = 0; i < assemblies.Length; i++)
+            {
+                var type = assemblies[i].GetType(GeneratedActionsTypeName, false);
+                if (type == null)
+                    continue;
+
+                _generatedActionsType = type;
+                _loggedMissingGeneratedActionsType = false;
+                generatedActionsType = type;
+                return true;
+            }
+
+            if (!_loggedMissingGeneratedActionsType)
+            {
+                _loggedMissingGeneratedActionsType = true;
+                Debug.LogError(
+                    $"[GameInputManager] Could not resolve generated '{GeneratedActionsTypeName}' type. Ensure Assets/InputSystem_Actions.cs is generated and free of compile errors.");
+            }
 
             return false;
         }

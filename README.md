@@ -1,6 +1,6 @@
-# YetAnotherMenuManager
+# Yet Another Menu Manager
 
-Overview
+Overview! Control the menus!
 
 `MenuController` is the single runtime owner of the menu stack. It:
 

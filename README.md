@@ -1,6 +1,45 @@
 # Yet Another Menu Manager
 
-Overview! Control the menus!
+> A robust, flexible menu management framework for Unity that handles UI stack navigation, pause states, and state transitions with minimal code.
+
+---
+
+## Overview
+
+Yet Another Menu Manager (YAMM) provides a production-ready menu system for Unity games. The `MenuController` manages a stack of UI screens, handling lifecycle events, state management, and pause coordination. Perfect for complex UIs with multiple overlapping menus and state-dependent behavior.
+
+---
+
+## Getting Started
+
+### Requirements
+
+- **Unity 2020.3 LTS** or later
+- **UniTask** for async/await support (if using async transitions)
+- **LeanTween** for animation support (if using animated transitions)
+
+### Installation
+
+1. Clone repository or add as submodule
+2. Copy `Assets/Plugins/YetAnotherMenuManager/` to your project
+3. Add `MenuController` component to a persistent GameObject
+4. Configure MenuGroupDefinition ScriptableObjects for your menus
+5. Create UIMenuComponent subclasses for each menu screen
+
+---
+
+## Quick Start
+
+1. Create a `MenuManager` GameObject
+2. Attach `MenuController` component
+3. Create a `MenuGroupDefinition` for each menu group
+4. Create `UIMenuComponent` subclasses for your menus
+5. Assign in MenuController's inspector
+6. Use `Services.Get<MenuController>()` to show/hide menus
+
+---
+
+## Core Features
 
 `MenuController` is the single runtime owner of the menu stack. It:
 
@@ -280,3 +319,9 @@ Assign `pauseMenu` and `rootGameplayMenu` in the inspector. `MenuInputRouter` re
 ### MenuActionInvoker
 
 `Runtime/MenuExternalIntegration.cs` — inspector-configurable component that exposes one `MenuActionType` (Show, Hide, Toggle, ShowGroup, etc.) and a target menu/group. Wire its `InvokeAction()` to a UnityEvent (e.g. a button's `onClick`) to avoid code in simple UI wiring cases.
+
+---
+
+## License
+
+Copyright © Walter Gordy
